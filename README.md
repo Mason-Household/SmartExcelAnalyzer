@@ -14,7 +14,7 @@
 <summary><h2>📋 Table of Contents</h2></summary>
 
 - [Smart Excel Analyzer](#-smart-excel-analyzer)
-  - [Table of Contents](#-table-of-contents)
+  - [Table of Contents](#table-of-contents)
   - [Introduction](#introduction)
   - [Features](#features)
     - [Detailed Features](#detailed-features)

@@ -1,4 +1,4 @@
-name: Smart Excel Analyzer .NET Backend CI/CID Workflow
+name: Smart Excel Analyzer .NET Backend CI/CD Workflow
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
       working-directory: ./Backend
       
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test --no-build --verbosity normal --nologo
       working-directory: ./Backend
       
     - name: Login to DockerHub

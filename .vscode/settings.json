@@ -1,14 +1,11 @@
 {
-    "dotnet-test-explorer.autoWatch": true,
     "dotnet.defaultSolution": "Backend/SmartExcelAnalyzer.sln",
-    "dotnet-test-explorer.testProjectPath": "**/SmartExcelAnalyzer.Tests.csproj",
     "azureFunctions.deploySubpath": "LLM",
     "azureFunctions.scmDoBuildDuringDeployment": true,
     "azureFunctions.projectLanguage": "Python",
     "azureFunctions.projectRuntime": "~4",
     "debug.internalConsoleOptions": "neverOpen",
     "azureFunctions.projectLanguageModel": 2,
-    "CodeGPT.apiKey": "CodeGPT Plus Beta",
     "files.associations": {
         "docker-stack.yml": "dockercompose",
         "coverlet.runsettings": "xml",

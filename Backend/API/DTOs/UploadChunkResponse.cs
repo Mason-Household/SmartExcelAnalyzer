@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace API.DTOs;
 
+[ExcludeFromCodeCoverage]
 public class UploadResponse : BaseResponse
 {
     public int ChunkSize { get; set; }

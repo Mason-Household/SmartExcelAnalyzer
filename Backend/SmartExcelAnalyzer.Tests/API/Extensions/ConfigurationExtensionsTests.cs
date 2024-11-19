@@ -1,9 +1,9 @@
-using API.Extensions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using API.Extensions;
 
 namespace SmartExcelAnalyzer.Tests.API.Extensions;
 

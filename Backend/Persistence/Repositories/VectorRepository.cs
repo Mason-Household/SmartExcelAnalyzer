@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Diagnostics;
+using Domain.Extensions;
 using Persistence.Database;
 using Domain.Persistence.DTOs;
 using System.Threading.Channels;
@@ -15,7 +16,7 @@ public interface IVectorDbRepository
 {
     Task<string?> SaveDocumentAsync(
         SummarizedExcelData vectorSpreadsheetData, 
-        IProgress<(double, double)>? progress = null,
+        IProgress<(double ParseProgress, double SaveProgress)>? progress = null,
         CancellationToken cancellationToken = default
     );
 
@@ -81,7 +82,7 @@ public class VectorRepository(
     /// <returns></returns>
     public async Task<string?> SaveDocumentAsync(
         SummarizedExcelData? vectorSpreadsheetData = null, 
-        IProgress<(double, double)>? progress = null, 
+        IProgress<(double ParseProgress, double SaveProgress)>? progress = null, 
         CancellationToken cancellationToken = default
     )
     {
@@ -237,8 +238,7 @@ public class VectorRepository(
             var processedRows = 0;
             cancellationToken.ThrowIfCancellationRequested();
             var batch = new ConcurrentBag<ConcurrentDictionary<string, object>>();
-            await Parallel.ForEachAsync(
-                rows, 
+            await rows.ForEachAsync(
                 cancellationToken, 
                 async (row, ct) =>
                 {
@@ -309,7 +309,7 @@ public class VectorRepository(
             IEnumerable<float[]> Embeddings, 
             IEnumerable<ConcurrentDictionary<string, object>> Batch
         )> reader,
-        IProgress<(double, double)>? progress,
+        IProgress<(double ParseProgress, double SaveProgress)>? progress,
         int totalRows,
         string fileName,
         CancellationToken cancellationToken = default
@@ -344,7 +344,7 @@ public class VectorRepository(
             IEnumerable<float[]> Embeddings, 
             IEnumerable<ConcurrentDictionary<string, object>> Batch
         ) message, 
-        IProgress<(double, double)>? progress, 
+        IProgress<(double ParseProgress, double SaveProgress)>? progress, 
         int totalRows, 
         int processedRows, 
         string documentId, 
@@ -391,9 +391,8 @@ public class VectorRepository(
             CancellationToken = cancellationToken
         };
         var pairs = batch.Zip(embeddings, (row, embedding) => (row, embedding));
-        await Parallel.ForEachAsync(
-            pairs, 
-            parallelOptions, 
+        await pairs.ForEachAsync(
+            cancellationToken, 
             async (pair, ct) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();

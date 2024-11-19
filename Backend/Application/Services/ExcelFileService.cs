@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text;
 using ExcelDataReader;
+using Domain.Extensions;
 using Domain.Application;
 using Domain.Persistence.DTOs;
 using Microsoft.AspNetCore.Http;
@@ -111,28 +112,30 @@ public class ExcelFileService : IExcelFileService
         var lastReportedProgress = 0.0;
         var totalRows = Math.Max(1, table.Rows.Count);
         var rows = new ConcurrentBag<ConcurrentDictionary<string, object>>();
-        await Task.Run(() =>
-        {
-            Parallel.For(
-                0, 
-                table.Rows.Count, 
-                parallelOptions, 
-                async i =>
-                {
-                    rows.Add(await ProcessRowAsync(table.Rows[i], columns, parallelOptions));
-                    var currentProcessed = Interlocked.Increment(ref processedRows);
-                    var currentProgress = currentProcessed / (double)totalRows;
-                    // Only report if progress has increased significantly
-                    if (currentProgress - lastReportedProgress >= 0.1)
+        await Task.Run(
+            () =>
+            {
+                Parallel.For(
+                    0, 
+                    table.Rows.Count, 
+                    parallelOptions, 
+                    async i =>
                     {
-                        var oldProgress = Interlocked.Exchange(ref lastReportedProgress, currentProgress);
-                        if (currentProgress > oldProgress) // Ensure we only report increasing progress
-                            progress?.Report((currentProgress, 0));
+                        rows.Add(await ProcessRowAsync(table.Rows[i], columns, parallelOptions));
+                        var currentProcessed = Interlocked.Increment(ref processedRows);
+                        var currentProgress = currentProcessed / (double)totalRows;
+                        // Only report if progress has increased significantly
+                        if (currentProgress - lastReportedProgress >= 0.1)
+                        {
+                            var oldProgress = Interlocked.Exchange(ref lastReportedProgress, currentProgress);
+                            if (currentProgress > oldProgress) // Ensure we only report increasing progress
+                                progress?.Report((currentProgress, 0));
+                        }
                     }
-                }
-            );
-        }, 
-        parallelOptions.CancellationToken);
+                );
+            }, 
+            parallelOptions.CancellationToken
+        );
         return rows;
     }
 
@@ -143,9 +146,8 @@ public class ExcelFileService : IExcelFileService
     )
     {
         var dict = new ConcurrentDictionary<string, object>(columns.Length, columns.Length);
-        await Parallel.ForEachAsync(
-            columns,
-            parallelOptions,
+        await columns.ForEachAsync(
+            cancellationToken: parallelOptions.CancellationToken,
             async (column, token) =>
             {
                 var value = row[column];
@@ -216,9 +218,8 @@ public class ExcelFileService : IExcelFileService
             .Columns
             .Cast<DataColumn>()
             .ToArray();
-        await Parallel.ForEachAsync(
-            columns,
-            parallelOptions,
+        await columns.ForEachAsync(
+            cancellationToken: parallelOptions.CancellationToken,
             async (column, token) =>
             {
                 if (IsNumericColumn(column, table))
@@ -310,9 +311,8 @@ public class ExcelFileService : IExcelFileService
         var columnName = column.ColumnName;
         var hashedValues = new ConcurrentDictionary<string, string>();
         var parallelOptions = CreateParallelOptions(cancellationToken);
-        await Parallel.ForEachAsync(
-            table.AsEnumerable(), 
-            parallelOptions, 
+        await table.AsEnumerable().ForEachAsync(
+            cancellationToken: parallelOptions.CancellationToken, 
             async (row, token) =>
             {
                 var value = row[column]?.ToString();

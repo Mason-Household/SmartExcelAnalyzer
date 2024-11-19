@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: smart-excel-analyzer-service
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 5001
+    name: backend
+  - port: 81
+    targetPort: 3000
+    name: frontend
+  - port: 82
+    targetPort: 8000
+    name: llm
+  - port: 9090
+    targetPort: 9090
+    name: prometheus
+  - port: 16686
+    targetPort: 16686
+    name: jaeger
+  - port: 6333
+    targetPort: 6333
+    name: qdrant
+  selector:
+    app: smart-excel-analyzer-backend

@@ -25,7 +25,7 @@ jobs:
       working-directory: ./Frontend
       
     - name: Run Tests
-      run: npx jest --coverage
+      run: npx jest --coverage --runInBand
       working-directory: ./Frontend
 
     - name: Upload Coverage to Codecov

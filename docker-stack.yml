@@ -11,27 +11,6 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  traefik:
-    image: traefik:v2.9
-    container_name: traefik
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--entrypoints.web.address=:81"
-    ports:
-      - "81:81"
-      - "8080:8080" # Traefik dashboard
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./traefik.yml:/etc/traefik/traefik.yml"
-    networks:
-      - smart-excel-network
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -122,6 +101,7 @@ services:
       - "traefik.http.routers.llm-service.rule=Host(`traefik`) && PathPrefix(`/llm-service`)"
       - "traefik.http.services.llm-service.loadbalancer.server.port=8000"
       - "traefik.http.routers.llm-service.entrypoints=web"
+      - "traefik.http.routers.llm-service.middlewares=cors"
 
   backend:
     image: fivemowner/smart-excel-analyzer-backend:latest
@@ -141,10 +121,14 @@ services:
       - llm-service
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`traefik`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.backend.rule=Host(`traefik`) && PathPrefix(`/progressHub`)"
+      - "traefik.http.routers.backend.rule=Host(`traefik`) && PathPrefix(`/networkhost/api`)"
       - "traefik.http.services.backend.loadbalancer.server.port=5001"
       - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.routers.backend.middlewares=cors"
+      - "traefik.http.routers.backend-signalr.rule=Host(`traefik`) && PathPrefix(`/networkhost/progressHub`)"
+      - "traefik.http.services.backend-signalr.loadbalancer.server.port=5000"
+      - "traefik.http.routers.backend-signalr.entrypoints=web"
+      - "traefik.http.routers.backend-signalr.middlewares=cors"
     deploy:
       replicas: 1
       update_config:
@@ -156,6 +140,27 @@ services:
         delay: 10s
         order: stop-first
 
+  traefik:
+    image: traefik:v2.9
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:81"
+    ports:
+      - "81:81"
+      - "8080:8080" # Traefik dashboard
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./traefik.yml:/etc/traefik/traefik.yml"
+    networks:
+      - smart-excel-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
   frontend:
     image: fivemowner/smart-excel-analyzer-frontend:latest
     volumes:
@@ -164,8 +169,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_BASE_API_URL=http://backend/api
-      - VITE_SIGNALR_HUB_URL=http://backend/progressHub
+      - VITE_BASE_API_URL=http://backend/networkhost/api
+      - VITE_SIGNALR_HUB_URL=http://backend/networkhost/progressHub
     networks:
       - smart-excel-network
     depends_on:
@@ -175,6 +180,7 @@ services:
       - "traefik.http.routers.frontend.rule=Host(`traefik`)"
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
       - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.middlewares=cors"
     deploy:
       endpoint_mode: vip
       restart_policy:

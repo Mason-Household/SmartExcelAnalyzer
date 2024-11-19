@@ -103,7 +103,8 @@ services:
       - llm-service
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`traefik`) && PathPrefix(`/host`)"
+      - "traefik.http.routers.backend.rule=Host(`traefik`) && PathPrefix(`/networkhost/api`)"
+      - "--entrypoints.web.address=:5001"
       - "traefik.http.services.backend.loadbalancer.server.port=5001"
       - "traefik.http.routers.backend.entrypoints=web"
       - "traefik.http.routers.backend-signalr.rule=Host(`traefik`) && PathPrefix(`/networkhost/progressHub`)"

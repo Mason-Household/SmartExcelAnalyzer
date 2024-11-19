@@ -1,5 +1,6 @@
 using Qdrant.Client;
 using System.Text.Json;
+using Domain.Extensions;
 using Qdrant.Client.Grpc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -196,13 +197,12 @@ public class QdrantDatabaseWrapper(
     {
         var parallelOptions = CreateParallelOptions(cancellationToken);
         var points = new ConcurrentBag<PointStruct>();
-        await Parallel.ForEachAsync(
-            rows,
-            parallelOptions,
+        await rows.ForEachAsync(
+            cancellationToken,
             async (row, ct) =>
             {
                 points.Add(await CreateRow(documentId!, row));
-                await Task.CompletedTask;
+                await Task.Yield();
             }
         );
         return points;
@@ -222,7 +222,7 @@ public class QdrantDatabaseWrapper(
         };
         if (documentId is not null) point.Payload.Add("document_id", new Value { StringValue = documentId.ToString() });
         point.Payload.Add("content", new Value { StringValue = JsonSerializer.Serialize(row, _serializerOptions) });
-        await Task.CompletedTask;
+        await Task.Yield();
         return point;
     }
 
@@ -260,7 +260,6 @@ public class QdrantDatabaseWrapper(
         };
     #endregion
 }
-
 
 public interface IQdrantClient
 {

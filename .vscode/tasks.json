@@ -1,29 +1,65 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "pip install (functions)",
-			"type": "shell",
-			"osx": {
-				"command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
-			},
-			"windows": {
-				"command": "${config:azureFunctions.pythonVenv}\\Scripts\\python -m pip install -r requirements.txt"
-			},
-			"linux": {
-				"command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
-			},
-			"problemMatcher": []
-		},
-		{
-			"type": "func",
-			"label": "func: host start",
-			"command": "host start",
-			"problemMatcher": "$func-python-watch",
-			"isBackground": true,
-			"options": {
-				"cwd": "${workspaceFolder}/LLM"
-			}
-		}
-	]
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "pip install (functions)",
+            "type": "shell",
+            "osx": {
+                "command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
+            },
+            "windows": {
+                "command": "${config:azureFunctions.pythonVenv}\\Scripts\\python -m pip install -r requirements.txt"
+            },
+            "linux": {
+                "command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "func",
+            "label": "func: host start",
+            "command": "host start",
+            "problemMatcher": "$func-python-watch",
+            "isBackground": true,
+            "options": {
+                "cwd": "${workspaceFolder}/LLM"
+            }
+        },
+        {
+            "label": "build backend",
+            "type": "shell",
+            "command": "docker build -t myacr.azurecr.io/smart-excel-analyzer-backend:latest .",
+            "options": {
+                "cwd": "${workspaceFolder}/Backend"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "test backend",
+            "type": "shell",
+            "command": "pytest",
+            "options": {
+                "cwd": "${workspaceFolder}/Backend"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "build frontend",
+            "type": "shell",
+            "command": "docker build -t myacr.azurecr.io/smart-excel-analyzer-frontend:latest .",
+            "options": {
+                "cwd": "${workspaceFolder}/Frontend"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "test frontend",
+            "type": "shell",
+            "command": "npm test",
+            "options": {
+                "cwd": "${workspaceFolder}/Frontend"
+            },
+            "problemMatcher": []
+        }
+    ]
 }

@@ -1,0 +1,175 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-excel-analyzer-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smart-excel-analyzer-backend
+  template:
+    metadata:
+      labels:
+        app: smart-excel-analyzer-backend
+    spec:
+      containers:
+      - name: backend
+        image: myacr.azurecr.io/smart-excel-analyzer-backend:$(Build.BuildId)
+        ports:
+        - containerPort: 5001
+        envFrom:
+        - secretRef:
+            name: backend-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-excel-analyzer-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smart-excel-analyzer-frontend
+  template:
+    metadata:
+      labels:
+        app: smart-excel-analyzer-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: myacr.azurecr.io/smart-excel-analyzer-frontend:$(Build.BuildId)
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - secretRef:
+            name: frontend-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-excel-analyzer-llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smart-excel-analyzer-llm
+  template:
+    metadata:
+      labels:
+        app: smart-excel-analyzer-llm
+    spec:
+      containers:
+      - name: llm
+        image: myacr.azurecr.io/smart-excel-analyzer-llm:$(Build.BuildId)
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - secretRef:
+            name: llm-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus/prometheus.yml
+          subPath: prometheus.yml
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+      - name: jaeger
+        image: jaegertracing/all-in-one:latest
+        ports:
+        - containerPort: 16686
+        - containerPort: 14268
+        - containerPort: 14250
+        - containerPort: 9411
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qdrant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+      - name: qdrant
+        image: qdrant/qdrant:latest
+        ports:
+        - containerPort: 6333
+        volumeMounts:
+        - name: qdrant-data
+          mountPath: /qdrant/data
+        - name: qdrant-config
+          mountPath: /qdrant/config/qdrant_config.yaml
+          subPath: qdrant_config.yaml
+      volumes:
+      - name: qdrant-data
+        persistentVolumeClaim:
+          claimName: qdrant-data
+      - name: qdrant-config
+        configMap:
+          name: qdrant-config

@@ -206,7 +206,7 @@ public static class ProgramExtensions
         public const string DatabaseOptionsSection = "DatabaseOptions";
         public const string LLMServiceOptionsSection = "LLMServiceOptions";
         public const string AppSettingsEnvironmentJson = "appsettings.{0}.json";
-        public static readonly string[] SupportedUrls = ["http://localhost:5001", "https://localhost:44359", "http://localhost:5000"];
+        public static readonly string[] SupportedUrls = ["http://localhost:5001"];
         
         public static class ValidationMessages
         {

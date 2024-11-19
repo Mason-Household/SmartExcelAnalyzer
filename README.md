@@ -226,27 +226,7 @@ API documentation is available via Swagger UI. After starting the backend servic
     "123456789012"
   ```
 
-### 2. Get the Status of an Upload
-
-**Request:**
-
-  ```http
-  GET /api/analysis/index/status/123456789012
-  Content-Type: application/json
-  ```
-
-**Response:**
-
-  ```csharp
-  {
-    IsIndexing: true,
-    IndexingDocumentNbr: 10,
-    TotalDocumentCount: 100,
-    Error: string?
-  }
-  ```
-
-### 3. Ask a Question
+### 2. Ask a Question
 
 **Request:**
 

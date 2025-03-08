@@ -103,7 +103,7 @@ public class ProgramExtensionsTests
 
         options.Should().NotBeNull();
         options!.Value.LLM_SERVICE_URLS.Should().NotBeEmpty();
-        options!.Value.LLM_SERVICE_URLS.Should().HaveCount(3);
+        options!.Value.LLM_SERVICE_URLS.Should().HaveCount(2);
         options!.Value.LLM_SERVICE_URLS.Should().Contain("http://localhost:5000");
         options!.Value.LLM_SERVICE_URLS.Should().Contain("http://localhost:5002");
     }

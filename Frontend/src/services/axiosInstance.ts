@@ -4,7 +4,7 @@ const baseUrl = getEnv('VITE_BASE_API_URL', 'http://localhost:81/networkhost/api
 
 const axiosInstance = axios.create({
   baseURL: baseUrl,
-  withCredentials: false,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },

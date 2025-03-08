@@ -6,7 +6,7 @@ import { render, screen, fireEvent, act, createEvent, waitFor } from '@testing-l
 
 jest.mock('@microsoft/signalr');
 jest.mock('../../utils/getEnv', () => ({
-  getEnv: () => 'http://localhost:5001'
+  getEnv: () => 'http://localhost:5000'
 }));
 
 describe('FileUpload', () => {

@@ -5,9 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace Persistence.Hubs;
 
 #region Hub
-public class ProgressHub(
-    ILogger<ProgressHub> _logger
-) : Hub, IProgressHubWrapper
+public class ProgressHub(ILogger<ProgressHub> _logger) : Hub
 {
     #region Signal R Methods
     private const string RECEIVE_PROGRESS = "ReceiveProgress";
@@ -38,13 +36,15 @@ public class ProgressHub(
     [ExcludeFromCodeCoverage]
     public override async Task OnConnectedAsync()
     {
-        _logger.LogInformation(CLIENT_CONNECTED, Context.ConnectionId);
+        //_logger.LogInformation(CLIENT_CONNECTED, Context.ConnectionId);
+        await Clients.All.SendAsync("UserConnected", Context.ConnectionId);
         await base.OnConnectedAsync();
     }
     [ExcludeFromCodeCoverage]
     public override async Task OnDisconnectedAsync(Exception exception)
     {
-        _logger.LogInformation(CLIENT_DISCONNECTED, Context.ConnectionId);
+        //_logger.LogInformation(CLIENT_DISCONNECTED, Context.ConnectionId);
+        await Clients.All.SendAsync("UserDisconnected", Context.ConnectionId);
         await base.OnDisconnectedAsync(exception);
     }
     #endregion

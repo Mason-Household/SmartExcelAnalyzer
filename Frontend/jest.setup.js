@@ -1,6 +1,6 @@
 global.importMetaEnv = {
-  VITE_SIGNALR_HUB_URL: "http://localhost:5001/progressHub",
-  VITE_BASE_API_URL: "http://localhost:5001/api",
+  VITE_SIGNALR_HUB_URL: "http://localhost:5000/progressHub",
+  VITE_BASE_API_URL: "http://localhost:5000/api",
 };
 
 Object.defineProperty(global, 'import', {

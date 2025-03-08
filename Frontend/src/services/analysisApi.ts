@@ -40,15 +40,20 @@ const finalizeUpload = async (documentId: string): Promise<FinalizeResponse> => 
 
 export const uploadFile = async (file: File): Promise<string> => {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('fileToUpload', file);
 
-  const response = await axiosInstance.post('/analysis/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
+  try {
+    const response = await axiosInstance.post('/analysis/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
 
-  return response.data.documentId;
+    return response.data.documentId;
+  } catch (error) {
+    console.error('File upload error:', error);
+    throw error;
+  }
 }
 
 export const submitQuery = async (

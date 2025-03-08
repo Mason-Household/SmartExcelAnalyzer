@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { Paper, Snackbar, Alert, Box } from '@mui/material';
-import { submitQuery, uploadFileInChunks } from './services/analysisApi.ts';
+import { submitQuery, uploadFile } from './services/analysisApi.ts';
 import DocumentList from './components/DocumentList/DocumentList';
 import FileUpload from './components/FileUpload/FileUpload';
 import QueryForm from './components/QueryForm/QueryForm';
@@ -59,9 +59,8 @@ function SmartExcelAnalyzerApp() {
 
   const handleFileUpload = async (file: File) => {
     try {
-      const res = await uploadFileInChunks(file);
-      const newDocument = { id: res.documentId, name: res.filename };
-      setDocuments([...documents, newDocument]);
+      const res = await uploadFile(file);
+      setDocuments([...documents, { id: res, name: file.name }]);
       showToast('File uploaded successfully', 'success');
     } catch (error) {
       console.error('File upload failed:', error);

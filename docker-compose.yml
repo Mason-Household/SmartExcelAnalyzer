@@ -1,47 +1,6 @@
 name: Smart Excel Analyzer
 
-x-common-depends-on: &common-depends-on
-  depends_on:
-      - 'traefik'
-      - 'prometheus'
-
 services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - smart-excel-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.prometheus.rule=Host(`traefik`)"
-      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
-      - "traefik.http.routers.prometheus.entrypoints=web"
-
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: jaeger
-    ports:
-      - "5775:5775/udp"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "5778:5778"
-      - "16686:16686"
-      - "14268:14268"
-      - "14250:14250"
-      - "9411:9411"
-    <<: *common-depends-on
-    networks:
-      - smart-excel-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.jaeger.rule=Host(`traefik`)"
-      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
-      - "traefik.http.routers.jaeger.entrypoints=web"
-
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
@@ -56,14 +15,6 @@ services:
       - ./qdrant_config.yml:/qdrant/config/qdrant_config.yaml
     env_file:
       - .env
-    <<: *common-depends-on
-    networks:
-      - smart-excel-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.qdrant.rule=Host(`traefik`)"
-      - "traefik.http.services.qdrant.loadbalancer.server.port=6333"
-      - "traefik.http.routers.qdrant.entrypoints=web"
 
   llm-service:
     image: fivemowner/smart-excel-analyzer-llm:latest
@@ -77,61 +28,24 @@ services:
       - .env
     depends_on:
       - 'qdrant'
-    networks:
-      - smart-excel-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.llm-service.rule=Host(`traefik`)"
-      - "traefik.http.services.llm-service.loadbalancer.server.port=8000"
-      - "traefik.http.routers.llm-service.entrypoints=web"
 
   backend:
     image: fivemowner/smart-excel-analyzer-backend:latest
     container_name: backend
     ports:
-      - "5001:5001"
-      - "5000:5000"
-      - "44349:44359"
+      - "5001:5001"  # Changed from 5000 to 5001
     volumes:
       - ./Backend:/src
     env_file:
       - .env
-    networks:
-      - smart-excel-network
+    environment:
+      - ASPNETCORE_URLS=http://+:5001
+      - ASPNETCORE_HTTP_PORTS=5001
+      - ASPNETCORE_HTTPS_PORTS=
+      - Kestrel__Endpoints__Http__Url=http://0.0.0.0:5001
     depends_on:
       - qdrant
       - llm-service
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`traefik`) && PathPrefix(`/host`)"
-      - "traefik.http.services.backend.loadbalancer.server.port=5001"
-      - "traefik.http.routers.backend.entrypoints=web"
-      - "traefik.http.routers.backend-signalr.rule=Host(`traefik`) && PathPrefix(`/networkhost/progressHub`)"
-      - "traefik.http.services.backend-signalr.loadbalancer.server.port=5000"
-      - "traefik.http.routers.backend-signalr.entrypoints=web"
-
-  traefik:
-    image: traefik:v2.9
-    container_name: traefik
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--entrypoints.web.address=:81"
-      - "--entrypoints.websecure.address=:443"
-    ports:
-      - "81:81"
-      - "443:443"
-      - "8080:8080" # Dashboard - helpful
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./traefik.yml:/etc/traefik/traefik.yml"
-    networks:
-      - smart-excel-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik`)"
-      - "traefik.http.services.traefik.loadbalancer.server.port=81"
-      - "traefik.http.routers.traefik.entrypoints=web"
 
   frontend:
     image: fivemowner/smart-excel-analyzer-frontend:latest
@@ -142,22 +56,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_BASE_API_URL=http://localhost:81/networkhost/api
-      - VITE_SIGNALR_HUB_URL=http://localhost:81/networkhost/progressHub
-    networks:
-      - smart-excel-network
+      # Update environment variables to use port 5001
+      - VITE_BASE_API_URL=/api
+      - VITE_SIGNALR_HUB_URL=/progressHub
     depends_on:
       - backend
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`traefik`)"
-      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
-      - "traefik.http.routers.frontend.entrypoints=web"
-
-networks:
-  smart-excel-network:
-    driver: overlay
-    attachable: true
 
 volumes:
   model_cache:

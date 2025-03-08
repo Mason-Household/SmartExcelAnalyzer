@@ -387,7 +387,7 @@ public class VectorRepository(
     {
         var parallelOptions = new ParallelOptions 
         { 
-            MaxDegreeOfParallelism = Math.Max(-1, _maxConcurrentTasks),
+            MaxDegreeOfParallelism = Math.Max(-1, _maxConcurrentTasks > 0 ? _maxConcurrentTasks : Environment.ProcessorCount),
             CancellationToken = cancellationToken
         };
         var pairs = batch.Zip(embeddings, (row, embedding) => (row, embedding));

@@ -340,7 +340,7 @@ public class ExcelFileService : IExcelFileService
         new()
         {
             CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(-1, Environment.ProcessorCount - 4)
+            MaxDegreeOfParallelism = Math.Max(-1, (Environment.ProcessorCount - 4) > 0 ? Environment.ProcessorCount - 4 : 1)
         };
     #endregion
 }

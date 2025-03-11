@@ -1,4 +1,8 @@
+using Qdrant.Client;
+using Qdrant.Client.Grpc;
+using Microsoft.Extensions.Options;
 using System.Diagnostics.CodeAnalysis;
+using Domain.Persistence.Configuration;
 using static API.Extensions.ProgramExtensions;
 
 namespace API;
@@ -6,12 +10,14 @@ namespace API;
 [ExcludeFromCodeCoverage]
 public class Program
 {
-   public static void Main(string[] args) => 
-       ConfigureSmartExcelAnalyzerProgram(args)
-       .Run();
+    public static void Main(string[] args)
+    {
+        var app = ConfigureSmartExcelAnalyzerProgram(args);
+        // app = app.ConfigureCollections().Result;
+        app.Run();
+    }
 }
 
-// Add this to your Program.cs file to replace your current configuration
 
 // Add this to your Program.cs file to replace your current configuration
 

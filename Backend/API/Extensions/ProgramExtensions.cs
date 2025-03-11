@@ -12,6 +12,10 @@ using Microsoft.OpenApi.Models;
 using FluentValidation.AspNetCore;
 using System.Diagnostics.CodeAnalysis;
 using Domain.Persistence.Configuration;
+using Grpc.Net.Client;
+using Qdrant.Client.Grpc;
+using System.Net;
+using Microsoft.Extensions.Options;
 
 namespace API.Extensions;
 
@@ -66,6 +70,8 @@ public static class ProgramExtensions
             client =>
             {
                 client.Timeout = TimeSpan.FromMinutes(30);
+                client.DefaultRequestVersion = HttpVersion.Version11;
+                client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
             }
         );
         return builder;
@@ -103,18 +109,39 @@ public static class ProgramExtensions
             .Validate(options => options.SAVE_BATCH_SIZE > 0, ConfigurationConstants.ValidationMessages.QdrantBatchSizeValidation)
             .Validate(options => !string.IsNullOrEmpty(options.HOST), ConfigurationConstants.ValidationMessages.QdrantHostValidation)
             .Validate(options => options.MAX_CONNECTION_COUNT > 0, ConfigurationConstants.ValidationMessages.QdrantMaxConnectionValidation)
-            .Validate(options => !string.IsNullOrEmpty(options.QDRANT_API_KEY), ConfigurationConstants.ValidationMessages.QdrantApiKeyValidation)
+            // .Validate(options => !string.IsNullOrEmpty(options.QDRANT_API_KEY), ConfigurationConstants.ValidationMessages.QdrantApiKeyValidation)
             .Validate(options => !string.IsNullOrEmpty(options.DatabaseName), ConfigurationConstants.ValidationMessages.QdrantDatabaseNameValidation)
             .Validate(options => !string.IsNullOrEmpty(options.CollectionName), ConfigurationConstants.ValidationMessages.QdrantCollectionNameValidation)
             .Validate(options => !string.IsNullOrEmpty(options.CollectionNameTwo), ConfigurationConstants.ValidationMessages.QdrantCollectionNameTwoValidation);
-        var options = databaseOptions.Get<DatabaseOptions>();
-        builder.Services.AddSingleton(sp => new QdrantClient(
-            options!.HOST, 
-            options!.PORT, 
-            options!.USE_HTTPS, 
-            options!.QDRANT_API_KEY, 
-            grpcTimeout: TimeSpan.FromMinutes(30))
-        );
+        builder.Services.AddSingleton(sp => 
+        {
+            var options = databaseOptions.Get<DatabaseOptions>();
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            
+            // Configure HTTP/2 for unencrypted connections
+            AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+            
+            // Build the URI with explicit protocol, host and port
+            var uri = new Uri($"http://{options!.HOST}:{options!.PORT}");
+            
+            // Get the API key, ensuring it's not null or empty
+            var apiKey = options!.QDRANT_API_KEY ?? Environment.GetEnvironmentVariable("QDRANT_API_KEY");
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new InvalidOperationException("Qdrant API key is not configured. Please set DatabaseOptions__QDRANT_API_KEY or QDRANT_API_KEY environment variable.");
+            }
+            
+            var logger = sp.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation("Initializing QdrantClient with URI: {Uri}, API Key: {ApiKeyPrefix}...", uri, apiKey.Substring(0, Math.Min(5, apiKey.Length)));
+            
+            // Create QdrantClient with URI
+            return new QdrantClient(
+                uri,
+                apiKey: apiKey,
+                grpcTimeout: TimeSpan.FromMinutes(5),
+                loggerFactory: loggerFactory
+            );
+        });
         builder.Services.AddSingleton<IQdrantClient, QdrantClientWrapper>();
         builder.Services.AddScoped<IDatabaseWrapper, QdrantDatabaseWrapper>();
         builder.Services.AddScoped<IVectorDbRepository, VectorRepository>();
@@ -168,6 +195,56 @@ public static class ProgramExtensions
         return builder;
     }
 
+    public static async Task<WebApplication> ConfigureCollections(this WebApplication app)
+    {
+        using (var scope = app.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+            var logger = services.GetRequiredService<ILogger<Program>>();
+            var qdrantClient = services.GetRequiredService<QdrantClient>();
+            
+            try
+            {
+                // Try to create the collections if they don't exist
+                var options = services.GetRequiredService<IOptions<DatabaseOptions>>();
+                var vectorSize = 384;
+                
+                // Create documents collection
+                try
+                {
+                    await qdrantClient.CreateCollectionAsync(
+                        options.Value.CollectionName,
+                        new VectorParams { Size = (uint)vectorSize, Distance = Distance.Cosine }
+                    );
+                    logger.LogInformation("Created collection: {CollectionName}", options.Value.CollectionName);
+                }
+                catch (Exception ex) when (ex.Message.Contains("already exists"))
+                {
+                    logger.LogInformation("Collection {CollectionName} already exists", options.Value.CollectionName);
+                }
+                
+                // Create summaries collection
+                try
+                {
+                    await qdrantClient.CreateCollectionAsync(
+                        options.Value.CollectionNameTwo,
+                        new VectorParams { Size = 1, Distance = Distance.Cosine }
+                    );
+                    logger.LogInformation("Created collection: {CollectionName}", options.Value.CollectionNameTwo);
+                }
+                catch (Exception ex) when (ex.Message.Contains("already exists"))
+                {
+                    logger.LogInformation("Collection {CollectionName} already exists", options.Value.CollectionNameTwo);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An error occurred while initializing collections");
+            }
+        }
+        return app;
+    }
+
     public static WebApplication ConfigureMiddleware(this WebApplication app)
     {
         app.UseSwagger()
@@ -182,10 +259,10 @@ public static class ProgramExtensions
             app.UseDeveloperExceptionPage();
         }
         app.UseCors("CorsPolicy");
-    
+
         // Then routing
         app.UseRouting();
-        
+        app.UseMiddleware<ExceptionMiddleware>();
         // Configure WebSockets with proper options
         app.UseWebSockets(new WebSocketOptions
         {

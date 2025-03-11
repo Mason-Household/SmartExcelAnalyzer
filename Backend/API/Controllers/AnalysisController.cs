@@ -59,8 +59,11 @@ public class AnalysisController(
     public async Task<IActionResult> UploadFile(
         [FromForm] IFormFile fileToUpload,
         CancellationToken cancellationToken = default
-    ) =>
-        Ok(
+    ) 
+    {
+        var uploadId = fileToUpload.FileName + DateTime.UtcNow.ToString()[8..];
+        _cache.Set(fileToUpload.FileName, uploadId);
+        return Ok(
             new
             {
                 Filename = fileToUpload.FileName,
@@ -81,6 +84,8 @@ public class AnalysisController(
                 }, cancellationToken)
             }
         );
+    }
+        
 
     [HttpPost("initialize-upload")]
     [CommonResponseTypesAttribute]

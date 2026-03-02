@@ -16,7 +16,7 @@ services:
     container_name: llm-service
     volumes:
       - ./LLM:/app
-      - /model_cache:/app/model_cache
+      - model_cache:/app/model_cache
     ports:
       - "8000:8000"
     env_file:

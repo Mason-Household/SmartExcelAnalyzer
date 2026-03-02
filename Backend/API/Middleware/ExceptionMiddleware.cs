@@ -42,7 +42,8 @@ public class ExceptionMiddleware(
         catch (HttpRequestException httpRequestException)
         {
             _logger.LogError(httpRequestException, HTTP_EXCEPTION);
-            await HandleExceptionAsync(context, httpRequestException, httpRequestException.StatusCode!.Value);
+            var statusCode = httpRequestException.StatusCode ?? HttpStatusCode.ServiceUnavailable;
+            await HandleExceptionAsync(context, httpRequestException, statusCode);
         }
         catch (OperationCanceledException operationCanceledException)
         {

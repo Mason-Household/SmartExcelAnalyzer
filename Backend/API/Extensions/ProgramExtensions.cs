@@ -134,12 +134,12 @@ public static class ProgramExtensions
             var logger = sp.GetRequiredService<ILogger<Program>>();
             logger.LogInformation("Initializing QdrantClient with URI: {Uri}, API Key: {ApiKeyPrefix}...", uri, apiKey.Substring(0, Math.Min(5, apiKey.Length)));
             
-            // Create QdrantClient with URI
+            // Create QdrantClient using host/port (REST API only - no gRPC)
             return new QdrantClient(
-                uri,
-                apiKey: apiKey,
-                grpcTimeout: TimeSpan.FromMinutes(5),
-                loggerFactory: loggerFactory
+                host: options.HOST,
+                port: options.PORT,
+                https: options.USE_HTTPS,
+                apiKey: apiKey
             );
         });
         builder.Services.AddSingleton<IQdrantClient, QdrantClientWrapper>();

@@ -15,6 +15,16 @@ from transformers import AutoTokenizer, AutoModel
 from urllib3.exceptions import InsecureRequestWarning
 from prometheus_fastapi_instrumentator import Instrumentator
 
+# Set cache directory for transformers models
+os.environ['TRANSFORMERS_CACHE'] = '/app/model_cache'
+os.environ['HF_HOME'] = '/app/model_cache'
+# Explicitly set HuggingFace endpoint to avoid proxy/mirror issues
+os.environ['HF_ENDPOINT'] = 'https://huggingface.co'
+# Clear any proxy settings that might interfere
+for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
+    if proxy_var in os.environ:
+        del os.environ[proxy_var]
+
 # Disable SSL warnings
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 

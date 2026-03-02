@@ -13,7 +13,7 @@ public class Program
     public static void Main(string[] args)
     {
         var app = ConfigureSmartExcelAnalyzerProgram(args);
-        // app = app.ConfigureCollections().Result;
+        app = app.ConfigureCollections().Result;
         app.Run();
     }
 }

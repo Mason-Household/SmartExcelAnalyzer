@@ -20,10 +20,12 @@ namespace Persistence.Database;
 /// <param name="_client"></param>
 /// <param name="options"></param>
 /// <param name="_logger"></param>
+/// <param name="httpClientFactory"></param>
 public class QdrantDatabaseWrapper(
     IQdrantClient _client,
     IOptions<DatabaseOptions> options,
-    ILogger<QdrantDatabaseWrapper> _logger
+    ILogger<QdrantDatabaseWrapper> _logger,
+    IHttpClientFactory httpClientFactory
 ) : IDatabaseWrapper
 {
     #region Fields
@@ -43,6 +45,9 @@ public class QdrantDatabaseWrapper(
     private string SummaryCollectionName => options.Value.CollectionNameTwo;
     private int MaxDegreeOfParallelism => options.Value.MAX_CONNECTION_COUNT;
     private readonly JsonSerializerOptions _serializerOptions = new() { PropertyNameCaseInsensitive = true };
+    private readonly HttpClient _httpClient = httpClientFactory.CreateClient();
+    private string QdrantRestUrl => $"http://{options.Value.HOST}:{options.Value.PORT}";
+    private string? ApiKey => string.IsNullOrWhiteSpace(options.Value.QDRANT_API_KEY) ? null : options.Value.QDRANT_API_KEY;
     #endregion
 
     #region Public Methods
@@ -109,11 +114,9 @@ public class QdrantDatabaseWrapper(
             summaryData.Payload["is_summary"] = new Value { BoolValue = true };
             summaryData.Payload["document_id"] = new Value { StringValue = documentId };
             summaryData.Payload["content"] = new Value { StringValue = JsonSerializer.Serialize(summary, _serializerOptions) };
-            await _client.UpsertAsync(
-                points: [ summaryData ],
-                collectionName: SummaryCollectionName,
-                cancellationToken: cancellationToken
-            );
+            
+            await UpsertViaRestApiAsync(new[] { summaryData }, SummaryCollectionName, cancellationToken);
+            
             return summary.Count;
         }
         catch (Exception ex)
@@ -236,11 +239,7 @@ public class QdrantDatabaseWrapper(
         {
             try
             {
-                await _client.UpsertAsync(
-                    points: batch,
-                    collectionName: DocumentCollectionName,
-                    cancellationToken: cancellationToken
-                );
+                await UpsertViaRestApiAsync(batch, DocumentCollectionName, cancellationToken);
                 totalInserted += batch.Length;
                 _logger.LogInformation("Successfully inserted batch of {BatchSize} vectors. Progress: {Progress}", batch.Length, totalInserted);
             }
@@ -250,6 +249,99 @@ public class QdrantDatabaseWrapper(
                 throw;
             }
         }
+    }
+
+    private async Task UpsertViaRestApiAsync(
+        IEnumerable<PointStruct> points,
+        string collectionName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var url = $"{QdrantRestUrl}/collections/{collectionName}/points";
+        
+        // Convert PointStruct to REST API format
+        var payload = new
+        {
+            points = points.Select(p =>
+            {
+                // Extract float array from Vectors - Vectors can be implicitly created from float[]
+                var vectorArray = ExtractVectorArray(p.Vectors);
+                
+                return new
+                {
+                    id = Guid.NewGuid().ToString(),
+                    vector = vectorArray,
+                    payload = p.Payload.ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => ConvertValueToObject(kvp.Value)
+                    )
+                };
+            }).ToList()
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Put, url)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }),
+                System.Text.Encoding.UTF8,
+                "application/json"
+            )
+        };
+
+        if (!string.IsNullOrEmpty(ApiKey))
+        {
+            request.Headers.Add("api-key", ApiKey);
+        }
+
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError("Qdrant REST API upsert failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+            throw new HttpRequestException($"Qdrant upsert failed: {response.StatusCode}");
+        }
+    }
+
+    private float[] ExtractVectorArray(Vectors vectors)
+    {
+        // Try to access the underlying data - Vectors is created from float[]
+        // Use reflection or try different properties
+        var vectorsType = vectors.GetType();
+        var dataProperty = vectorsType.GetProperty("Vector");
+        if (dataProperty != null)
+        {
+            var vector = dataProperty.GetValue(vectors);
+            if (vector != null)
+            {
+                var dataField = vector.GetType().GetProperty("Data");
+                if (dataField != null)
+                {
+                    var data = dataField.GetValue(vector);
+                    if (data is IEnumerable<float> floatData)
+                    {
+                        return floatData.ToArray();
+                    }
+                }
+            }
+        }
+        
+        // Fallback: return empty array
+        _logger.LogWarning("Could not extract vector array from Vectors object");
+        return Array.Empty<float>();
+    }
+
+    private object? ConvertValueToObject(Value value)
+    {
+        if (value.KindCase == Value.KindOneofCase.StringValue)
+            return value.StringValue;
+        if (value.KindCase == Value.KindOneofCase.BoolValue)
+            return value.BoolValue;
+        if (value.KindCase == Value.KindOneofCase.IntegerValue)
+            return value.IntegerValue;
+        if (value.KindCase == Value.KindOneofCase.DoubleValue)
+            return value.DoubleValue;
+        return null;
     }
 
     private ParallelOptions CreateParallelOptions(CancellationToken cancellationToken = default) =>

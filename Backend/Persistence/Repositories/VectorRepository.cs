@@ -109,11 +109,11 @@ public class VectorRepository(
                 vectorSpreadsheetData.Summary, 
                 cancellationToken
             );
-            if (summarySuccess is < 0) 
-            {
+            // The rows are already stored, so a failed summary is not worth losing
+            // the upload over. It only carries statistics and column order, and
+            // queries fall back to reading those from the rows themselves.
+            if (summarySuccess is null or < 0)
                 _logger.LogWarning(LOG_FAIL_SAVE_SUMMARY, documentId);
-                throw new InvalidOperationException("Failed to save summary to the database.");
-            }
         }
         _logger.LogInformation(LOG_SUCCESS_SAVE, documentId);
         return documentId;

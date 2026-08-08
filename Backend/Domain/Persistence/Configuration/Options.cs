@@ -10,6 +10,8 @@ public class LLMServiceOptions
 public class DatabaseOptions
 {
     public int PORT { get; set; }
+    /// <summary>Qdrant serves REST on PORT (6333) and gRPC on a separate port (6334).</summary>
+    public int GRPC_PORT { get; set; } = 6334;
     public int SAVE_BATCH_SIZE { get; set; }
     public int MAX_RETRY_COUNT { get; set; }
     public bool USE_HTTPS { get; set; } = false;

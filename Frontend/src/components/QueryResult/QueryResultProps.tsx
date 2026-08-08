@@ -8,4 +8,5 @@ export interface SubmitQueryResult {
   question: string;
   documentId: string;
   relevantRows: Array<{ [key: string]: any }>;
+  columns?: string[];
 }

@@ -1,15 +1,58 @@
 name: Smart Excel Analyzer
 
+x-backend-env: &backend-env
+  ASPNETCORE_URLS: http://+:5001
+  ASPNETCORE_HTTP_PORTS: 5001
+  ASPNETCORE_HTTPS_PORTS: ""
+  Kestrel__Endpoints__Http__Url: http://0.0.0.0:5001
+  DatabaseOptions__HOST: qdrant
+  DatabaseOptions__PORT: 6333
+  DatabaseOptions__GRPC_PORT: 6334
+  DatabaseOptions__QDRANT_API_KEY: local-1234567890abcdef
+  DatabaseOptions__SAVE_BATCH_SIZE: 100
+  DatabaseOptions__MAX_CONNECTION_COUNT: 5
+  DatabaseOptions__DatabaseName: smartexcel
+  DatabaseOptions__CollectionName: documents
+  DatabaseOptions__CollectionNameTwo: summaries
+  LLMServiceOptions__LLM_SERVICE_URL: http://llm-service:8000
+  LLMServiceOptions__LLM_SERVICE_URLS__0: http://llm-service:8000
+  QDRANT_API_KEY: local-1234567890abcdef
+
+x-llm-env: &llm-env
+  QDRANT_HOST: qdrant
+  QDRANT_PORT: 6333
+  QDRANT_API_KEY: local-1234567890abcdef
+  QDRANT_USE_HTTPS: "false"
+  EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
+  # ~3GB and CPU-only. Drop to google/flan-t5-base if memory is tight.
+  TEXT_GENERATION_MODEL: google/flan-t5-large
+
 services:
+  traefik:
+    image: traefik:v2.9
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:81"
+    ports:
+      - "81:81"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - smart-excel-network
+
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
-    ports:
-      - "6333:6333"
     environment:
-      - QDRANT_API_KEY=local-1234567890abcdef
+      QDRANT_API_KEY: local-1234567890abcdef
     volumes:
       - qdrant_data:/qdrant/storage
+    networks:
+      - smart-excel-network
 
   llm-service:
     image: fivemowner/smart-excel-analyzer-llm:latest
@@ -17,30 +60,43 @@ services:
     volumes:
       - ./LLM:/app
       - model_cache:/app/model_cache
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+    environment:
+      <<: *llm-env
     depends_on:
-      - 'qdrant'
+      - qdrant
+    networks:
+      - smart-excel-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.llm-service.rule=PathPrefix(`/llm-service`)"
+      - "traefik.http.routers.llm-service.entrypoints=web"
+      - "traefik.http.routers.llm-service.priority=90"
+      - "traefik.http.services.llm-service.loadbalancer.server.port=8000"
 
   backend:
     image: fivemowner/smart-excel-analyzer-backend:latest
     container_name: backend
-    ports:
-      - "5001:5001"  # Changed from 5000 to 5001
     volumes:
       - ./Backend:/src
-    env_file:
-      - .env
     environment:
-      - ASPNETCORE_URLS=http://+:5001
-      - ASPNETCORE_HTTP_PORTS=5001
-      - ASPNETCORE_HTTPS_PORTS=
-      - Kestrel__Endpoints__Http__Url=http://0.0.0.0:5001
+      <<: *backend-env
     depends_on:
       - qdrant
       - llm-service
+    networks:
+      - smart-excel-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/swagger`) || PathPrefix(`/progressHub`) || PathPrefix(`/health`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.routers.backend.priority=100"
+      - "traefik.http.services.backend.loadbalancer.server.port=5001"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowcredentials=true"
+      - "traefik.http.middlewares.cors.headers.accesscontrolmaxage=100"
+      - "traefik.http.routers.backend.middlewares=cors@docker"
 
   frontend:
     image: fivemowner/smart-excel-analyzer-frontend:latest
@@ -48,14 +104,23 @@ services:
     volumes:
       - ./Frontend:/app
       - /app/node_modules
-    ports:
-      - "3000:3000"
     environment:
-      # Update environment variables to use port 5001
       - VITE_BASE_API_URL=/api
       - VITE_SIGNALR_HUB_URL=/progressHub
     depends_on:
       - backend
+    networks:
+      - smart-excel-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+
+networks:
+  smart-excel-network:
+    driver: bridge
 
 volumes:
   model_cache:

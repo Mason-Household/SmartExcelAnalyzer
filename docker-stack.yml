@@ -17,48 +17,13 @@ services:
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:81"
     ports:
       - "81:81"
-      - "8080:8080" # Traefik dashboard
+      - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./traefik.yml:/etc/traefik/traefik.yml"
-    networks:
-      - smart-excel-network
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - smart-excel-network
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: jaeger
-    ports:
-      - "5775:5775/udp"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "5778:5778"
-      - "16686:16686"
-      - "14268:14268"
-      - "14250:14250"
-      - "9411:9411"
     networks:
       - smart-excel-network
     deploy:
@@ -69,10 +34,6 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    command:
-      - "./qdrant"
-      - "--config-path"
-      - "/qdrant/config/qdrant_config.yaml"
     env_file:
       - .env
     healthcheck:
@@ -83,18 +44,12 @@ services:
     logging:
       <<: *default-logging
     volumes:
-      - qdrant_data:/qdrant/data
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.qdrant.rule=Host(`traefik`) && PathPrefix(`/qdrant`)"
-      - "traefik.http.services.qdrant.loadbalancer.server.port=6333"
-      - "traefik.http.routers.qdrant.entrypoints=web"
+      - qdrant_data:/qdrant/storage
     deploy:
-      replicas: 2
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
-          - node.labels.qdrant == true
 
   llm-service:
     image: fivemowner/smart-excel-analyzer-llm:latest
@@ -119,9 +74,10 @@ services:
         window: 120s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.llm-service.rule=Host(`traefik`) && PathPrefix(`/llm-service`)"
+      - "traefik.http.routers.llm-service.rule=PathPrefix(`/llm-service`)"
       - "traefik.http.services.llm-service.loadbalancer.server.port=8000"
       - "traefik.http.routers.llm-service.entrypoints=web"
+      - "traefik.http.routers.llm-service.priority=90"
 
   backend:
     image: fivemowner/smart-excel-analyzer-backend:latest
@@ -131,7 +87,7 @@ services:
       - .env
     healthcheck:
       <<: *default-healthcheck
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
     networks:
       - smart-excel-network
     logging:
@@ -141,9 +97,10 @@ services:
       - llm-service
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`traefik`) && (PathPrefix(`/api`) || PathPrefix(`/swagger`) || PathPrefix(`/progressHub`))"
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/swagger`) || PathPrefix(`/progressHub`) || PathPrefix(`/health`)"
       - "traefik.http.services.backend.loadbalancer.server.port=5001"
       - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.routers.backend.priority=100"
       - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
       - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=*"
       - "traefik.http.middlewares.cors.headers.accesscontrolallowheaders=*"
@@ -169,17 +126,18 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_BASE_API_URL=http://traefik:81/networkhost/api
-      - VITE_SIGNALR_HUB_URL=http://traefik:81/networkhost/progressHub
+      - VITE_BASE_API_URL=/api
+      - VITE_SIGNALR_HUB_URL=/progressHub
     networks:
       - smart-excel-network
     depends_on:
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`traefik`)"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
       - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
     deploy:
       endpoint_mode: vip
       restart_policy:

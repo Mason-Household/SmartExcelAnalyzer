@@ -120,24 +120,23 @@ public static class ProgramExtensions
             
             // Configure HTTP/2 for unencrypted connections
             AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
-            
-            // Build the URI with explicit protocol, host and port
-            var uri = new Uri($"http://{options!.HOST}:{options!.PORT}");
-            
+
             // Get the API key, ensuring it's not null or empty
             var apiKey = options!.QDRANT_API_KEY ?? Environment.GetEnvironmentVariable("QDRANT_API_KEY");
             if (string.IsNullOrEmpty(apiKey))
             {
                 throw new InvalidOperationException("Qdrant API key is not configured. Please set DatabaseOptions__QDRANT_API_KEY or QDRANT_API_KEY environment variable.");
             }
-            
+
+            var grpcPort = options.GRPC_PORT > 0 ? options.GRPC_PORT : 6334;
             var logger = sp.GetRequiredService<ILogger<Program>>();
-            logger.LogInformation("Initializing QdrantClient with URI: {Uri}, API Key: {ApiKeyPrefix}...", uri, apiKey.Substring(0, Math.Min(5, apiKey.Length)));
-            
-            // Create QdrantClient using host/port (REST API only - no gRPC)
+            logger.LogInformation(
+                "Initializing QdrantClient against {Host}:{GrpcPort} (gRPC), API Key: {ApiKeyPrefix}...",
+                options.HOST, grpcPort, apiKey[..Math.Min(5, apiKey.Length)]);
+
             return new QdrantClient(
                 host: options.HOST,
-                port: options.PORT,
+                port: grpcPort,
                 https: options.USE_HTTPS,
                 apiKey: apiKey
             );
@@ -267,7 +266,7 @@ public static class ProgramExtensions
         app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30),
-            AllowedOrigins = { "http://localhost:3000" }
+            AllowedOrigins = { "http://localhost:3000", "http://localhost:81" }
         });
         
         app.Use(async (context, next) =>

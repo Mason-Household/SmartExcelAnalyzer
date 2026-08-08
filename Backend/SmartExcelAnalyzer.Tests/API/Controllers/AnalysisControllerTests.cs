@@ -20,6 +20,15 @@ public class AnalysisControllerTests
     private readonly Mock<IMemoryCache> _cacheMock = new();
     private AnalysisController Sut => new(_mediatorMock.Object, _hubWrapperMock.Object, _cacheMock.Object);
 
+    public AnalysisControllerTests()
+    {
+        // IMemoryCache.Set is an extension method over CreateEntry, which returns
+        // null on a bare mock and makes the controller throw.
+        _cacheMock
+            .Setup(c => c.CreateEntry(It.IsAny<object>()))
+            .Returns(Mock.Of<ICacheEntry>());
+    }
+
     [Fact]
     public async Task SubmitQuery_ReturnsOkResult_WhenQueryIsValid()
     {

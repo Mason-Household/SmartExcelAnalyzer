@@ -4,7 +4,7 @@ import torch
 import logging
 import requests
 from enum import Enum
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from transformers import pipeline
 from qdrant_client.http import models
@@ -14,6 +14,13 @@ from fastapi.responses import JSONResponse
 from transformers import AutoTokenizer, AutoModel
 from urllib3.exceptions import InsecureRequestWarning
 from prometheus_fastapi_instrumentator import Instrumentator
+
+from analytics import (
+    answer_with_pandas,
+    find_matching_rows,
+    load_document_dataframe,
+    rows_payload,
+)
 
 # Set cache directory for transformers models
 os.environ['TRANSFORMERS_CACHE'] = '/app/model_cache'
@@ -43,6 +50,8 @@ class Query(BaseModel):
 class QueryResponse(Query): 
     answer: str
     relevantRows: list
+    # Row payloads are unordered maps, so the sheet's column order is sent alongside.
+    columns: List[str] = []
 
 class ComputeEmbedding(BaseModel):
     text: str
@@ -50,9 +59,13 @@ class ComputeEmbedding(BaseModel):
 class ComputeBatchEmbeddings(BaseModel):
     texts: list[str]
 
+DOCUMENT_COLLECTION = "documents"
+SUMMARY_COLLECTION = "summaries"
+
 default_qdrant_port = 6333
 default_qdrant_host = "localhost"
-default_text_generation_model = "facebook/bart-large-cnn"
+# Instruction-tuned so it answers questions rather than summarizing them.
+default_text_generation_model = "google/flan-t5-large"
 default_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
 
 QDRANT_HOST = os.getenv(EnvironmentVariables.QDRANT_HOST.value, default_qdrant_host)
@@ -78,52 +91,105 @@ Instrumentator().instrument(app).expose(app)
 
 @app.get("/health", response_model=dict)
 async def health():
-    try:
-        print("Performing health check...")
-        AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
-        AutoModel.from_pretrained(EMBEDDING_MODEL)
-        pipeline("text2text-generation", model=TEXT_GENERATION_MODEL)
-        
-        print("LLM models loaded successfully.")
-        print("Health check passed: LLM Service Endpoint and LLM Models are accessible.")
-        return {"status": "ok"}
-    except Exception as e:
-        print("Health check failed.")
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Models are loaded once at startup; re-loading them here would make every
+    # health check take minutes.
+    if tokenizer is None or embedding_model is None or model is None:
+        raise HTTPException(status_code=500, detail="Models failed to load at startup")
+    return {"status": "ok"}
+
+def build_prompt(question: str, rows: List[dict], columns: Optional[List[str]] = None) -> str:
+    """Render retrieved rows as a readable table so the model can reason over them."""
+    lines = []
+    for index, row in enumerate(rows, start=1):
+        keys = [c for c in columns if c in row] if columns else list(row.keys())
+        fields = " | ".join(
+            f"{key}: {row[key]}" for key in keys
+            if key != "embedding" and str(row.get(key, "")).strip()
+        )
+        lines.append(f"Row {index}: {fields}")
+    table = "\n".join(lines)
+    return (
+        "Answer the question using only the spreadsheet rows below. "
+        "If the rows do not contain the answer, say you do not have enough information.\n\n"
+        f"Rows:\n{table}\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
+
 
 @app.post("/query", response_model=QueryResponse)
 async def process_query(query: Query) -> QueryResponse:
     try:
-        inputs = tokenizer(query.question, return_tensors="pt", truncation=True, padding=True)
-        with torch.no_grad():
-            question_embedding = embedding_model(**inputs).last_hidden_state.mean(dim=1).numpy().tolist()[0]
-        logger.info(f"Question Embedding: {question_embedding}")
-        search_result = qdrant_client.search(
-            collection_name="documents",
-            query_vector=question_embedding,
-            query_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="document_id",
-                        match=models.MatchValue(value=query.document_id)
-                    )
-                ]
-            ),
-            limit=10
+        # Aggregate questions need every row, not the ten most similar ones, so
+        # try to compute an exact answer before falling back to retrieval.
+        frame = load_document_dataframe(
+            qdrant_client, DOCUMENT_COLLECTION, query.document_id, SUMMARY_COLLECTION
         )
-        relevant_rows = [json.loads(hit.payload["content"]) for hit in search_result]
+        if frame.empty:
+            return QueryResponse(
+                answer="No rows are stored for this document. Try re-uploading the file.",
+                question=query.question,
+                document_id=query.document_id,
+                relevantRows=[]
+            )
 
-        logger.info(f"Relevant Rows: {relevant_rows}")
+        computed = answer_with_pandas(query.question, frame)
+        if computed is not None:
+            logger.info("Answered from computed statistics for %s", query.document_id)
+            return QueryResponse(
+                answer=computed.answer,
+                question=query.question,
+                document_id=query.document_id,
+                relevantRows=computed.rows,
+                columns=list(frame.columns)
+            )
 
-        context = " ".join([row["content"] for row in relevant_rows])
-        prompt = f"Given the following context: {context} Question: {query.question} Answer:"
-        result = model(prompt, max_length=250, do_sample=False)[0]['generated_text']
+        matched = find_matching_rows(query.question, frame)
+        if matched is not None:
+            relevant_rows = rows_payload(matched)
+            logger.info("Matched %d rows exactly for %s", len(relevant_rows), query.document_id)
+        else:
+            inputs = tokenizer(query.question, return_tensors="pt", truncation=True, padding=True)
+            with torch.no_grad():
+                question_embedding = embedding_model(**inputs).last_hidden_state.mean(dim=1).numpy().tolist()[0]
+            search_result = qdrant_client.search(
+                collection_name=DOCUMENT_COLLECTION,
+                query_vector=question_embedding,
+                query_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="document_id",
+                            match=models.MatchValue(value=query.document_id)
+                        )
+                    ]
+                ),
+                limit=10
+            )
+            relevant_rows = [json.loads(hit.payload["content"]) for hit in search_result]
+            logger.info(f"Retrieved {len(relevant_rows)} rows for {query.document_id}")
+
+        if not relevant_rows:
+            return QueryResponse(
+                answer="No matching rows were found for this question.",
+                question=query.question,
+                document_id=query.document_id,
+                relevantRows=[],
+                columns=list(frame.columns)
+            )
+
+        prompt = build_prompt(query.question, relevant_rows, list(frame.columns))
+        result = model(
+            prompt,
+            max_new_tokens=200,
+            do_sample=False,
+            truncation=True,
+        )[0]["generated_text"].strip()
         return QueryResponse(
             answer=result,
             question=query.question,
             document_id=query.document_id,
-            relevant_rows=relevant_rows
+            relevantRows=relevant_rows,
+            columns=list(frame.columns)
         )
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}", exc_info=True)

@@ -109,7 +109,11 @@ public class VectorRepository(
                 vectorSpreadsheetData.Summary, 
                 cancellationToken
             );
-            if (summarySuccess is < 0) _logger.LogWarning(LOG_FAIL_SAVE_SUMMARY, documentId);
+            // The rows are already stored, so a failed summary is not worth losing
+            // the upload over. It only carries statistics and column order, and
+            // queries fall back to reading those from the rows themselves.
+            if (summarySuccess is null or < 0)
+                _logger.LogWarning(LOG_FAIL_SAVE_SUMMARY, documentId);
         }
         _logger.LogInformation(LOG_SUCCESS_SAVE, documentId);
         return documentId;
@@ -334,7 +338,7 @@ public class VectorRepository(
         }
         finally
         {
-            progress?.Report((1, 1));
+            // progress?.Report((1, 1));
         }
         return documentId ?? string.Empty;
     }
@@ -387,7 +391,7 @@ public class VectorRepository(
     {
         var parallelOptions = new ParallelOptions 
         { 
-            MaxDegreeOfParallelism = Math.Max(-1, _maxConcurrentTasks),
+            MaxDegreeOfParallelism = Math.Max(-1, _maxConcurrentTasks > 0 ? _maxConcurrentTasks : Environment.ProcessorCount),
             CancellationToken = cancellationToken
         };
         var pairs = batch.Zip(embeddings, (row, embedding) => (row, embedding));

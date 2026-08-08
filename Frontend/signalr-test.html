@@ -1,0 +1,181 @@
+// Create a simple HTML file to test SignalR directly (without React)
+// Save this as signalr-test.html and open it in your browser
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SignalR Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+</head>
+<body>
+    <h1>SignalR Connection Test</h1>
+    <div>
+        <label for="url">Hub URL:</label>
+        <input type="text" id="url" value="http://localhost:5000/progressHub" style="width: 300px" />
+        <button id="btnConnect">Connect</button>
+        <button id="btnDisconnect" disabled>Disconnect</button>
+    </div>
+
+    <div style="margin-top: 20px">
+        <h3>Status: <span id="status">Disconnected</span></h3>
+        <h3>Transport: <span id="transport">None</span></h3>
+    </div>
+
+    <div style="margin-top: 20px">
+        <h3>Connection Log:</h3>
+        <pre id="log" style="height: 300px; overflow-y: auto; background-color: #f5f5f5; padding: 10px;"></pre>
+    </div>
+
+    <script>
+        const statusElement = document.getElementById('status');
+        const transportElement = document.getElementById('transport');
+        const logElement = document.getElementById('log');
+        const urlInput = document.getElementById('url');
+        const connectButton = document.getElementById('btnConnect');
+        const disconnectButton = document.getElementById('btnDisconnect');
+        
+        let connection = null;
+
+        function log(message) {
+            const timestamp = new Date().toISOString().slice(11, 19);
+            const entry = `[${timestamp}] ${message}`;
+            logElement.textContent += entry + '\n';
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        async function startConnection() {
+            try {
+                const url = urlInput.value;
+                log(`Attempting to connect to ${url}`);
+                statusElement.textContent = 'Connecting...';
+                
+                // Try first with standard negotiation
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl(url)
+                    .configureLogging(signalR.LogLevel.Information)
+                    .build();
+                
+                // Log when negotiation starts
+                log('Starting negotiation...');
+                
+                // Set up event handlers
+                connection.on('UserConnected', (connectionId) => {
+                    log(`Connected with ID: ${connectionId}`);
+                });
+                
+                connection.on('ReceiveProgress', (progress, total) => {
+                    log(`Progress update: ${progress}/${total}`);
+                });
+                
+                // Connection lifecycle handlers
+                connection.onclose((error) => {
+                    log(`Connection closed: ${error ? error.message : 'No error'}`);
+                    statusElement.textContent = 'Disconnected';
+                    transportElement.textContent = 'None';
+                    connectButton.disabled = false;
+                    disconnectButton.disabled = true;
+                });
+                
+                // Try to start the connection
+                await connection.start();
+                
+                // If we get here, connection succeeded
+                log('Connection established successfully!');
+                statusElement.textContent = 'Connected';
+                transportElement.textContent = connection.connection.transport.name;
+                connectButton.disabled = true;
+                disconnectButton.disabled = false;
+                
+            } catch (error) {
+                log(`Connection failed: ${error.message}`);
+                statusElement.textContent = 'Failed';
+                connectButton.disabled = false;
+                disconnectButton.disabled = true;
+                
+                // Try again with different options if the first attempt failed
+                log('Trying alternative connection methods...');
+                
+                try {
+                    // Try with WebSockets only
+                    connection = new signalR.HubConnectionBuilder()
+                        .withUrl(urlInput.value, {
+                            skipNegotiation: true,
+                            transport: signalR.HttpTransportType.WebSockets
+                        })
+                        .configureLogging(signalR.LogLevel.Debug)
+                        .build();
+                        
+                    log('Starting WebSockets-only connection...');
+                    await connection.start();
+                    
+                    log('WebSockets-only connection established!');
+                    statusElement.textContent = 'Connected (WebSockets only)';
+                    transportElement.textContent = 'WebSockets';
+                    connectButton.disabled = true;
+                    disconnectButton.disabled = false;
+                    
+                } catch (wsError) {
+                    log(`WebSockets-only connection failed: ${wsError.message}`);
+                    
+                    // Try with LongPolling as a last resort
+                    try {
+                        connection = new signalR.HubConnectionBuilder()
+                            .withUrl(urlInput.value, {
+                                transport: signalR.HttpTransportType.LongPolling
+                            })
+                            .configureLogging(signalR.LogLevel.Debug)
+                            .build();
+                            
+                        log('Starting LongPolling connection...');
+                        await connection.start();
+                        
+                        log('LongPolling connection established!');
+                        statusElement.textContent = 'Connected (LongPolling)';
+                        transportElement.textContent = 'LongPolling';
+                        connectButton.disabled = true;
+                        disconnectButton.disabled = false;
+                    } catch (lpError) {
+                        log(`All connection attempts failed. Last error: ${lpError.message}`);
+                        statusElement.textContent = 'All attempts failed';
+                    }
+                }
+            }
+        }
+
+        async function stopConnection() {
+            if (connection) {
+                try {
+                    await connection.stop();
+                    log('Connection stopped');
+                    statusElement.textContent = 'Disconnected';
+                    transportElement.textContent = 'None';
+                    connectButton.disabled = false;
+                    disconnectButton.disabled = true;
+                } catch (error) {
+                    log(`Error stopping connection: ${error.message}`);
+                }
+            }
+        }
+
+        // Setup event listeners
+        connectButton.addEventListener('click', startConnection);
+        disconnectButton.addEventListener('click', stopConnection);
+        
+        // Make a simple fetch request to test basic API connectivity
+        fetch('http://localhost:5000/api/test')
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                }
+                throw new Error('API not reachable');
+            })
+            .then(data => {
+                log(`API is reachable: ${JSON.stringify(data)}`);
+            })
+            .catch(error => {
+                log(`API connectivity test failed: ${error.message}`);
+            });
+    </script>
+</body>
+</html>

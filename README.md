@@ -187,7 +187,7 @@ The application uses a CQRS (Command Query Responsibility Segregation) pattern w
 
 4. **Access the frontend application** at [http://localhost:3000](http://localhost:3000).
 
-5. **Access the backend API directly** at [http://localhost:5001/swagger](http://localhost:5001/swagger).
+5. **Access the backend API directly** at [http://localhost:5000/swagger](http://localhost:5000/swagger).
 
 ## Usage
 
@@ -202,7 +202,7 @@ The application uses a CQRS (Command Query Responsibility Segregation) pattern w
 ## API Documentation
 
 API documentation is available via Swagger UI. After starting the backend service, navigate to:
-[http://localhost:5001/swagger](http://localhost:5001/swagger)
+[http://localhost:5000/swagger](http://localhost:5000/swagger)
 
 </details>
 
@@ -418,6 +418,10 @@ Follow these steps:
       ```
 
       ```powershell
+      docker swarm init
+      ```
+
+      ```powershell
       docker stack deploy -c docker-stack.yml smart-excel-analyzer
       ```
 
@@ -429,7 +433,7 @@ Follow these steps:
 
   3. **Access the frontend application** at [http://localhost:3000](http://localhost:3000).
 
-  4. **Access the backend API directly** at [http://localhost:5001/swagger](http://localhost:5001/swagger).
+  4. **Access the backend API directly** at [http://localhost:5000/swagger](http://localhost:5000/swagger).
 
   5. **Tear down the stack**:
 

@@ -90,7 +90,7 @@ public class ProgramExtensionsTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 {"LLMServiceOptions:LLM_SERVICE_URL", "http://localhost:5000"},
-                {"LLMServiceOptions:LLM_SERVICE_URLS:0", "http://localhost:5001"},
+                {"LLMServiceOptions:LLM_SERVICE_URLS:0", "http://localhost:5000"},
                 {"LLMServiceOptions:LLM_SERVICE_URLS:1", "http://localhost:5002"}
             })
             .Build();
@@ -103,8 +103,8 @@ public class ProgramExtensionsTests
 
         options.Should().NotBeNull();
         options!.Value.LLM_SERVICE_URLS.Should().NotBeEmpty();
-        options!.Value.LLM_SERVICE_URLS.Should().HaveCount(3);
-        options!.Value.LLM_SERVICE_URLS.Should().Contain("http://localhost:5001");
+        options!.Value.LLM_SERVICE_URLS.Should().HaveCount(2);
+        options!.Value.LLM_SERVICE_URLS.Should().Contain("http://localhost:5000");
         options!.Value.LLM_SERVICE_URLS.Should().Contain("http://localhost:5002");
     }
 

@@ -103,17 +103,19 @@ public class QdrantDatabaseWrapper(
         {
             var summaryData = new PointStruct 
             { 
-                Id = new PointId(), 
+                Id = new PointId { Uuid = Guid.NewGuid().ToString() }, 
                 Vectors = _dummyVector 
             };
             summaryData.Payload["is_summary"] = new Value { BoolValue = true };
             summaryData.Payload["document_id"] = new Value { StringValue = documentId };
             summaryData.Payload["content"] = new Value { StringValue = JsonSerializer.Serialize(summary, _serializerOptions) };
+            
             await _client.UpsertAsync(
-                points: [ summaryData ],
-                collectionName: SummaryCollectionName,
+                SummaryCollectionName,
+                new[] { summaryData },
                 cancellationToken: cancellationToken
             );
+            
             return summary.Count;
         }
         catch (Exception ex)
@@ -215,13 +217,16 @@ public class QdrantDatabaseWrapper(
     {
         var point = new PointStruct
         {
-            Id = new PointId(),
-            Vectors = row.TryGetValue("embedding", out var embedding)
-                ? embedding as Vectors ?? Array.Empty<float>()
+            Id = new PointId { Uuid = Guid.NewGuid().ToString() },
+            Vectors = row.TryGetValue("embedding", out var embedding) && embedding is float[] embeddingVector
+                ? embeddingVector
                 : Array.Empty<float>()
         };
         if (documentId is not null) point.Payload.Add("document_id", new Value { StringValue = documentId.ToString() });
-        point.Payload.Add("content", new Value { StringValue = JsonSerializer.Serialize(row, _serializerOptions) });
+        // The embedding lives in the vector, so keep it out of the stored content the LLM reads back.
+        var content = new ConcurrentDictionary<string, object>(
+            row.Where(kvp => kvp.Key != "embedding"));
+        point.Payload.Add("content", new Value { StringValue = JsonSerializer.Serialize(content, _serializerOptions) });
         await Task.CompletedTask;
         return point;
     }
@@ -237,8 +242,8 @@ public class QdrantDatabaseWrapper(
             try
             {
                 await _client.UpsertAsync(
-                    points: batch,
-                    collectionName: DocumentCollectionName,
+                    DocumentCollectionName,
+                    batch.ToList(),
                     cancellationToken: cancellationToken
                 );
                 totalInserted += batch.Length;
@@ -256,7 +261,7 @@ public class QdrantDatabaseWrapper(
         new()
         {
             CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(-1, MaxDegreeOfParallelism)
+            MaxDegreeOfParallelism = Math.Max(-1, MaxDegreeOfParallelism > 0 ? MaxDegreeOfParallelism : Environment.ProcessorCount)
         };
     #endregion
 }

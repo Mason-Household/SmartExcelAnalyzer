@@ -12,6 +12,10 @@ using Microsoft.OpenApi.Models;
 using FluentValidation.AspNetCore;
 using System.Diagnostics.CodeAnalysis;
 using Domain.Persistence.Configuration;
+using Grpc.Net.Client;
+using Qdrant.Client.Grpc;
+using System.Net;
+using Microsoft.Extensions.Options;
 
 namespace API.Extensions;
 
@@ -29,9 +33,7 @@ public static class ProgramExtensions
         .ConfigureHttpClient()
         .ConfigureLLMService()
         .Build()
-        .ConfigureCors()
-        .ConfigureMiddleware() 
-        .ConfigureProgressHub();
+        .ConfigureMiddleware();
     
     public static WebApplicationBuilder AddSmartExcelFileAnalyzerVariables(this WebApplicationBuilder? builder)
     {
@@ -48,7 +50,13 @@ public static class ProgramExtensions
 
     public static WebApplicationBuilder ConfigureLogging(this WebApplicationBuilder builder)
     {
+        builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
+        builder.Logging.AddDebug();
+        builder.Logging.SetMinimumLevel(LogLevel.Information);
+        
+        builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Information);
+        
         builder.Services.AddLogging();
         builder.Services.AddApplicationInsightsTelemetry();
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -62,6 +70,8 @@ public static class ProgramExtensions
             client =>
             {
                 client.Timeout = TimeSpan.FromMinutes(30);
+                client.DefaultRequestVersion = HttpVersion.Version11;
+                client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
             }
         );
         return builder;
@@ -69,16 +79,20 @@ public static class ProgramExtensions
 
     public static WebApplicationBuilder ConfigureApiAccess(this WebApplicationBuilder builder)
     {
-        builder.Services.AddSignalR();
+        builder.Services.AddSignalR(options => {
+            options.EnableDetailedErrors = true;
+        });
         builder.Services.AddHealthChecks();
         builder.Services.AddControllers(options => options.AddCommonResponseTypes());
         builder.Services.AddCors(options =>
         {
-            options.AddPolicy(ConfigurationConstants.AppCorsPolicy, builder =>
+            options.AddPolicy("CorsPolicy", builder =>
             {
-                builder.AllowAnyOrigin()
-                        .AllowAnyHeader()
-                        .AllowAnyMethod();
+                builder
+                    .AllowAnyMethod()
+                    .AllowAnyHeader()
+                    .SetIsOriginAllowed(_ => true)
+                    .AllowCredentials();
             });
         });
 
@@ -95,18 +109,38 @@ public static class ProgramExtensions
             .Validate(options => options.SAVE_BATCH_SIZE > 0, ConfigurationConstants.ValidationMessages.QdrantBatchSizeValidation)
             .Validate(options => !string.IsNullOrEmpty(options.HOST), ConfigurationConstants.ValidationMessages.QdrantHostValidation)
             .Validate(options => options.MAX_CONNECTION_COUNT > 0, ConfigurationConstants.ValidationMessages.QdrantMaxConnectionValidation)
-            .Validate(options => !string.IsNullOrEmpty(options.QDRANT_API_KEY), ConfigurationConstants.ValidationMessages.QdrantApiKeyValidation)
+            // .Validate(options => !string.IsNullOrEmpty(options.QDRANT_API_KEY), ConfigurationConstants.ValidationMessages.QdrantApiKeyValidation)
             .Validate(options => !string.IsNullOrEmpty(options.DatabaseName), ConfigurationConstants.ValidationMessages.QdrantDatabaseNameValidation)
             .Validate(options => !string.IsNullOrEmpty(options.CollectionName), ConfigurationConstants.ValidationMessages.QdrantCollectionNameValidation)
             .Validate(options => !string.IsNullOrEmpty(options.CollectionNameTwo), ConfigurationConstants.ValidationMessages.QdrantCollectionNameTwoValidation);
-        var options = databaseOptions.Get<DatabaseOptions>();
-        builder.Services.AddSingleton(sp => new QdrantClient(
-            options!.HOST, 
-            options!.PORT, 
-            options!.USE_HTTPS, 
-            options!.QDRANT_API_KEY, 
-            grpcTimeout: TimeSpan.FromMinutes(30))
-        );
+        builder.Services.AddSingleton(sp => 
+        {
+            var options = databaseOptions.Get<DatabaseOptions>();
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            
+            // Configure HTTP/2 for unencrypted connections
+            AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+
+            // Get the API key, ensuring it's not null or empty
+            var apiKey = options!.QDRANT_API_KEY ?? Environment.GetEnvironmentVariable("QDRANT_API_KEY");
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new InvalidOperationException("Qdrant API key is not configured. Please set DatabaseOptions__QDRANT_API_KEY or QDRANT_API_KEY environment variable.");
+            }
+
+            var grpcPort = options.GRPC_PORT > 0 ? options.GRPC_PORT : 6334;
+            var logger = sp.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation(
+                "Initializing QdrantClient against {Host}:{GrpcPort} (gRPC), API Key: {ApiKeyPrefix}...",
+                options.HOST, grpcPort, apiKey[..Math.Min(5, apiKey.Length)]);
+
+            return new QdrantClient(
+                host: options.HOST,
+                port: grpcPort,
+                https: options.USE_HTTPS,
+                apiKey: apiKey
+            );
+        });
         builder.Services.AddSingleton<IQdrantClient, QdrantClientWrapper>();
         builder.Services.AddScoped<IDatabaseWrapper, QdrantDatabaseWrapper>();
         builder.Services.AddScoped<IVectorDbRepository, VectorRepository>();
@@ -160,37 +194,113 @@ public static class ProgramExtensions
         return builder;
     }
 
+    public static async Task<WebApplication> ConfigureCollections(this WebApplication app)
+    {
+        using (var scope = app.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+            var logger = services.GetRequiredService<ILogger<Program>>();
+            var qdrantClient = services.GetRequiredService<QdrantClient>();
+            
+            try
+            {
+                // Try to create the collections if they don't exist
+                var options = services.GetRequiredService<IOptions<DatabaseOptions>>();
+                var vectorSize = 384;
+                
+                // Create documents collection
+                try
+                {
+                    await qdrantClient.CreateCollectionAsync(
+                        options.Value.CollectionName,
+                        new VectorParams { Size = (uint)vectorSize, Distance = Distance.Cosine }
+                    );
+                    logger.LogInformation("Created collection: {CollectionName}", options.Value.CollectionName);
+                }
+                catch (Exception ex) when (ex.Message.Contains("already exists"))
+                {
+                    logger.LogInformation("Collection {CollectionName} already exists", options.Value.CollectionName);
+                }
+                
+                // Create summaries collection
+                try
+                {
+                    await qdrantClient.CreateCollectionAsync(
+                        options.Value.CollectionNameTwo,
+                        new VectorParams { Size = 1, Distance = Distance.Cosine }
+                    );
+                    logger.LogInformation("Created collection: {CollectionName}", options.Value.CollectionNameTwo);
+                }
+                catch (Exception ex) when (ex.Message.Contains("already exists"))
+                {
+                    logger.LogInformation("Collection {CollectionName} already exists", options.Value.CollectionNameTwo);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An error occurred while initializing collections");
+            }
+        }
+        return app;
+    }
+
     public static WebApplication ConfigureMiddleware(this WebApplication app)
     {
-        if (app.Environment.IsDevelopment()) 
-            app.UseSwagger()
-               .UseSwaggerUI(
-                    options => 
-                        options.SwaggerEndpoint(ConfigurationConstants.SwaggerConfig.LaunchUrl, ConfigurationConstants.SwaggerConfig.Version))
-               .UseDeveloperExceptionPage(); 
+        app.UseSwagger()
+        .UseSwaggerUI(options => 
+        {
+            //options.SwaggerEndpoint("./swagger/v1/swagger.json", ConfigurationConstants.SwaggerConfig.Version);
+            options.RoutePrefix = "swagger";
+        });
 
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        app.UseCors("CorsPolicy");
+
+        // Then routing
+        app.UseRouting();
         app.UseMiddleware<ExceptionMiddleware>();
-        app.UseWebSockets();
-        app.UseHttpsRedirection();
+        // Configure WebSockets with proper options
+        app.UseWebSockets(new WebSocketOptions
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30),
+            AllowedOrigins = { "http://localhost:3000", "http://localhost:81" }
+        });
+        
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/progressHub"))
+            {
+                var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+                logger.LogInformation("SignalR request received: {Path} {Method} {QueryString}",
+                    context.Request.Path,
+                    context.Request.Method,
+                    context.Request.QueryString);
+                    
+                foreach (var header in context.Request.Headers)
+                {
+                    logger.LogInformation("Header: {Key}={Value}", header.Key, header.Value);
+                }
+            }
+            
+            await next();
+        });
+        
+        // Other middleware...
+        // app.UseHttpsRedirection();
         app.UseStaticFiles();
         app.UseDefaultFiles();
-        app.UseRouting();
-        app.UseAuthorization();
+        //app.UseAuthorization();
+        
+        // Map controllers and health checks
         app.MapControllers();
         app.MapHealthChecks(ConfigurationConstants.HealthCheckEndpoint);
-        return app;
-    }
-
-    public static WebApplication ConfigureProgressHub(this WebApplication app)
-    {
-        app.MapHub<ProgressHub>(ConfigurationConstants.ProgressHubEndpoint);
-        return app;
-    }
-
-    public static WebApplication ConfigureCors(this WebApplication app)
-    {
-        app.UseCors(ConfigurationConstants.AppCorsPolicy);
-        Array.ForEach(ConfigurationConstants.SupportedUrls, app.Urls.Add);
+        
+        // Map hub endpoint - make sure this comes after all other middleware
+        app.MapHub<ProgressHub>("/progressHub");
+        
         return app;
     }
 
@@ -206,8 +316,12 @@ public static class ProgramExtensions
         public const string DatabaseOptionsSection = "DatabaseOptions";
         public const string LLMServiceOptionsSection = "LLMServiceOptions";
         public const string AppSettingsEnvironmentJson = "appsettings.{0}.json";
-        public static readonly string[] SupportedUrls = ["http://localhost:5001", "https://localhost:44359", "http://localhost:5000"];
-        
+        public static readonly string[] SupportedUrls = [
+            "http://localhost:5000", 
+            "https://localhost:44359", 
+            "http://localhost:5000",
+            "http://localhost:3000" 
+        ];
         public static class ValidationMessages
         {
             public const string QdrantPortValidation = "Qdrant Port must be set.";

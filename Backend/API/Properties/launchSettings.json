@@ -6,7 +6,7 @@
       "dotnetRunMessages": true,
       "launchBrowser": false,
       "launchUrl": "",
-      "applicationUrl": "http://traefik:5000",
+      "applicationUrl": "http://0.0.0.0:5001",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
@@ -16,9 +16,9 @@
       "dotnetRunMessages": true,
       "launchBrowser": true,
       "launchUrl": "swagger",
-      "applicationUrl": "http://traefik:5001",
+      "applicationUrl": "http://0.0.0.0:5001",
       "environmentVariables": {
-        "ASPNETCORE_URLS": "http://traefik:5001",
+        "ASPNETCORE_URLS": "http://0.0.0.0:5001",
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
       "docker": {
@@ -32,7 +32,7 @@
         "dotnetRunMessages": true,
         "launchBrowser": true,
         "launchUrl": "swagger",
-        "applicationUrl": "https://traefik:5001",
+        "applicationUrl": "http://0.0.0.0:5001",
         "environmentVariables": {
           "ASPNETCORE_ENVIRONMENT": "Development"
         }

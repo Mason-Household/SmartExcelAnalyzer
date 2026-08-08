@@ -21,7 +21,10 @@ public class QdrantDatabaseWrapperTests
     private readonly Mock<IQdrantClient> _mockClient = new();
     private readonly Mock<IOptions<DatabaseOptions>> _mockOptions = new();
     private readonly Mock<ILogger<QdrantDatabaseWrapper>> _mockLogger = new();
-    private QdrantDatabaseWrapper Sut => new(_mockClient.Object, _mockOptions.Object, _mockLogger.Object);
+    private QdrantDatabaseWrapper Sut => new(
+        _mockClient.Object,
+        _mockOptions.Object,
+        _mockLogger.Object);
 
     public QdrantDatabaseWrapperTests()
     {

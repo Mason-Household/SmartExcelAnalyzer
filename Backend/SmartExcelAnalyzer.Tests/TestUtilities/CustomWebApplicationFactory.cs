@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace SmartExcelAnalyzer.Tests.TestUtilities;
 
-public class CustomWebApplicationFactory : WebApplicationFactory<Program>
+class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
     protected override IHost CreateHost(IHostBuilder builder)
     {

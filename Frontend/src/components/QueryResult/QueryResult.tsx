@@ -13,7 +13,18 @@ import {
 import { QueryResultProps } from './QueryResultProps';
 
 const QueryResult: React.FC<QueryResultProps> = ({ result }: QueryResultProps) => {
-  const { answer, question, documentId, relevantRows } = result;
+  const { answer, question, documentId, relevantRows, columns } = result;
+
+  // Row payloads arrive as unordered maps, so headers come from the sheet's
+  // column order and each cell is looked up by name rather than by position.
+  const headers = React.useMemo(() => {
+    if (columns && columns.length > 0) return columns;
+    const seen = new Set<string>();
+    (relevantRows ?? []).forEach((row) =>
+      Object.keys(row).forEach((key) => seen.add(key))
+    );
+    return Array.from(seen);
+  }, [columns, relevantRows]);
 
   return (
     <Box sx={{ mt: 2 }}>
@@ -44,7 +55,7 @@ const QueryResult: React.FC<QueryResultProps> = ({ result }: QueryResultProps) =
           <Table>
             <TableHead>
               <TableRow>
-                {Object.keys(relevantRows[0]).map((key) => (
+                {headers.map((key) => (
                   <TableCell key={key}>{key}</TableCell>
                 ))}
               </TableRow>
@@ -52,8 +63,8 @@ const QueryResult: React.FC<QueryResultProps> = ({ result }: QueryResultProps) =
             <TableBody>
               {relevantRows.map((row, index) => (
                 <TableRow key={index}>
-                  {Object.values(row).map((value, idx) => (
-                    <TableCell key={idx}>{value}</TableCell>
+                  {headers.map((key) => (
+                    <TableCell key={key}>{String(row[key] ?? '')}</TableCell>
                   ))}
                 </TableRow>
               ))}

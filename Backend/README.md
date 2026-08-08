@@ -73,7 +73,7 @@ Then run the container with the command:
 docker run -p 5001:80 backend
 ```
 
-This will build the docker image and start the single container instance. The API will be available at `http://localhost:5001`.
+This will build the docker image and start the single container instance. The API will be available at `http://localhost:5000`.
 
 ### 💻 Running Locally
 
@@ -89,7 +89,7 @@ This will build the docker image and start the single container instance. The AP
 dotnet run --project API
 ```
 
-The API will be available at `http://localhost:5000` or `https://localhost:5001`.
+The API will be available at `http://localhost:5000` or `https://localhost:5000`.
 
 #### With Docker Compose
 
@@ -108,7 +108,7 @@ docker compose up -d
 The backend uses Swagger to provide automatic API documentation. When the application is running, you can access the interactive Swagger UI at:
 
 - `http://localhost:5000/swagger` (if running with Docker)
-- `http://localhost:5000/swagger` or `https://localhost:5001/swagger` (if running locally)
+- `http://localhost:5000/swagger` or `https://localhost:5000/swagger` (if running locally)
 
 This allows you to explore and test the available API endpoints.
 

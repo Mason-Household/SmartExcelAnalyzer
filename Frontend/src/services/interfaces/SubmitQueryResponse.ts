@@ -4,4 +4,5 @@ export interface SubmitQueryResponse {
   question: string;
   documentId: string;
   relevantRows?: Record<string, unknown>[];
+  columns?: string[];
 }

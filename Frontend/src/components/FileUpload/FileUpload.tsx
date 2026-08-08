@@ -1,55 +1,107 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Typography, Box, LinearProgress } from '@mui/material';
 import { FileUpload as MuiFileUpload } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
-import { HubConnection, HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
+import { 
+  HubConnectionBuilder, 
+  HubConnection, 
+  LogLevel,
+  HttpTransportType
+} from '@microsoft/signalr';
 import { FileUploadProps } from './FileUploadProps';
-import { getEnv } from '../../utils/getEnv';
 
-const SIGNALR_HUB_URL = getEnv('VITE_SIGNALR_HUB_URL', '');
+// Use the relative URL since we're using the Vite proxy
+const SIGNALR_HUB_URL = '/progressHub';
 
 const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }): React.ReactElement => {
   const [parseProgress, setParseProgress] = useState(0);
   const [saveProgress, setSaveProgress] = useState(0);
-  const [connection, setConnection] = useState<HubConnection | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<string>('Initializing...');
+  const connectionRef = useRef<HubConnection | null>(null);
 
   useEffect(() => {
-    const newConnection = new HubConnectionBuilder()
-      .withUrl(SIGNALR_HUB_URL)
-      .withAutomaticReconnect()
-      .configureLogging(LogLevel.Information)
-      .withServerTimeout(10000)
-      .withKeepAliveInterval(20000)
-      .withStatefulReconnect()
-      .build();
-    newConnection.onclose((error) => {
-      console.log('SignalR Closed: ', error);
-    });
-    setConnection(newConnection);
+    const connectToHub = async () => {
+      try {
+        console.log(`Attempting to connect to ${SIGNALR_HUB_URL}`);
+        setConnectionStatus('Connecting...');
+        
+        const newConnection = new HubConnectionBuilder()
+          .withUrl(SIGNALR_HUB_URL, {
+            // Try all transport types
+            transport: 
+              HttpTransportType.WebSockets | 
+              HttpTransportType.ServerSentEvents | 
+              HttpTransportType.LongPolling,
+            skipNegotiation: false
+          })
+          .withAutomaticReconnect([0, 2000, 10000, 30000])
+          .configureLogging(LogLevel.Information)
+          .build();
+          
+        // Set up handlers first
+        newConnection.on('ReceiveProgress', (progress: number, total: number) => {
+          console.log(`Progress received: ${progress}/${total}`);
+          setParseProgress(progress * 100);
+          setSaveProgress(total * 100);
+        });
+        
+        newConnection.on('UserConnected', (connectionId: string) => {
+          console.log(`Connected to hub with ID: ${connectionId}`);
+          setConnectionStatus('Connected');
+        });
+        
+        newConnection.on('ReceiveError', (error: string) => {
+          console.error('SignalR Error: ', error);
+          setConnectionStatus(`Error: ${error}`);
+        });
+        
+        // Handle connection closing
+        newConnection.onclose((error?: Error) => {
+          console.log('Connection closed:', error);
+          setConnectionStatus('Disconnected');
+          
+          // Try to reconnect after a delay
+          setTimeout(() => {
+            if (!connectionRef.current) {
+              console.log('Attempting to reconnect...');
+              connectToHub();
+            }
+          }, 5000);
+        });
+        
+        // Start the connection
+        await newConnection.start();
+        console.log('SignalR Connected successfully!');
+        setConnectionStatus('Connected');
+        connectionRef.current = newConnection;
+      } catch (err: any) {
+        console.error('SignalR Connection Error: ', err);
+        setConnectionStatus(`Connection failed: ${err.message}`);
+        
+        // Try to reconnect after delay
+        setTimeout(() => {
+          connectToHub();
+        }, 5000);
+      }
+    };
+
+    connectToHub();
+
+    // Clean up function
+    return () => {
+      const connection = connectionRef.current;
+      if (connection) {
+        connection.stop()
+          .catch(err => console.error('Error stopping connection:', err));
+        connectionRef.current = null;
+      }
+    };
   }, []);
-
-  useEffect(() => {
-    if (connection) {
-      connection.start()
-        .then(() => {
-          console.log('SignalR Connected');
-          connection.on('ReceiveProgress', (parseProgress: number, saveProgress: number) => {
-            setParseProgress(parseProgress * 100);
-            setSaveProgress(saveProgress * 100);
-          });
-
-          connection.on('ReceiveError', (error: string) => {
-            console.error('SignalR Error: ', error);
-            setParseProgress(0);
-            setSaveProgress(0);
-          });
-        })
-        .catch((err: Error) => console.error('SignalR Connection Error: ', err));
-    }
-  }, [connection]);
 
   const onDrop = (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
+      setParseProgress(0);
+      setSaveProgress(0);
       onFileUpload(acceptedFiles[0]);
     }
   };
@@ -83,10 +135,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }): React.ReactEle
           'Drag and drop your file here or click to select'
         }
       </Typography>
+      
+      <Typography 
+        variant="caption" 
+        color={connectionStatus === 'Connected' ? 'success.main' : 'text.secondary'}
+        sx={{ display: 'block', mt: 1 }}
+      >
+        SignalR: {connectionStatus}
+      </Typography>
+      
       {(parseProgress > 0 || saveProgress > 0) && (
         <Box sx={{ mt: 2 }}>
           <Typography variant="body2">
-            Parsing Progress:
+            Parsing Progress: {parseProgress.toFixed(0)}%
           </Typography>
           <LinearProgress 
             variant="determinate"
@@ -96,7 +157,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }): React.ReactEle
             variant="body2"
             sx={{ mt: 1 }} 
           >
-            Saving Progress:
+            Saving Progress: {saveProgress.toFixed(0)}%
           </Typography>
           <LinearProgress
             variant="determinate" 

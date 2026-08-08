@@ -1,9 +1,10 @@
 service:
-  api_key: ${QDRANT_API_KEY}
+  api_key: "local-1234567890abcdef"
+storage:
+  storage_path: /qdrant/storage
 qdrant:
-  api_key: ${QDRANT_API_KEY}
   port: ${DatabaseOptions__PORT}
-  host: ${DatabaseOptions__HOST}
+  host: "0.0.0.0"
   distributed:
     enabled: true
     host: ${DatabaseOptions__HOST}

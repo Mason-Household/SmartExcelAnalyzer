@@ -295,18 +295,13 @@ public class VectorRepoAddTests
         _databaseMock.SetupSequence(c => c.StoreVectorsAsync(It.IsAny<ConcurrentBag<ConcurrentDictionary<string, object>>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("1")
             .ReturnsAsync("2");
+        _databaseMock.Setup(c => c.StoreSummaryAsync(It.IsAny<string>(), It.IsAny<ConcurrentDictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
         var result = await Sut.SaveDocumentAsync(data);
 
         result.Should().Be("1");
-        _loggerMock.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.IsAny<It.IsAnyType>(),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.AtMostOnce);
+        _loggerMock.VerifyLog(LogLevel.Warning, "Inconsistent document IDs across batches");
     }
 
     [Fact]
